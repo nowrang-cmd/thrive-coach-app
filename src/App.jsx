@@ -65,6 +65,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [players, setPlayers] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
+  const [intakeSubmissions, setIntakeSubmissions] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -90,11 +91,15 @@ export default function App() {
   async function loadData() {
     setStatus("Loading coach data...");
 
-    const [playersResult, evaluationsResult] = await Promise.all([
+    const [playersResult, evaluationsResult, intakeResult] = await Promise.all([
       supabase.from("players").select("*").order("last_name", { ascending: true }),
       supabase
         .from("evaluations")
         .select("*, players(first_name,last_name,full_name,grade_level,position)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("evaluation_submissions")
+        .select("*")
         .order("created_at", { ascending: false })
     ]);
 
@@ -108,8 +113,14 @@ export default function App() {
       return;
     }
 
+    if (intakeResult.error) {
+      setStatus(`Intake load error: ${intakeResult.error.message}`);
+      return;
+    }
+
     setPlayers(playersResult.data || []);
     setEvaluations(evaluationsResult.data || []);
+    setIntakeSubmissions(intakeResult.data || []);
     setStatus("");
   }
 
@@ -161,6 +172,20 @@ export default function App() {
       evaluation.placement?.toLowerCase().includes(term)
     );
   }, [evaluations, search]);
+
+  function startPlayerFromIntake(submission) {
+    setPlayerForm({
+      first_name: submission.athlete_first_name || "",
+      last_name: submission.athlete_last_name_1 || "",
+      birth_year: submission.birth_year || "",
+      grade_level: submission.dropdown_90c5 || "",
+      position: submission.position || "",
+      school: submission.school || ""
+    });
+
+    setStatus("Player form prefilled from intake submission. Review and click Create Player.");
+    setView("player");
+  }
 
   async function createPlayer(event) {
     event.preventDefault();
@@ -256,6 +281,10 @@ export default function App() {
             <BarChart3 size={17} /> Dashboard
           </button>
 
+          <button className={view === "intake" ? "active" : ""} onClick={() => setView("intake")}>
+            <ClipboardList size={17} /> Intake Pipeline
+          </button>
+
           <button className={view === "player" ? "active" : ""} onClick={() => setView("player")}>
             <UserPlus size={17} /> Add Player
           </button>
@@ -279,6 +308,14 @@ export default function App() {
           search={search}
           setSearch={setSearch}
           refresh={loadData}
+        />
+      )}
+
+      {view === "intake" && (
+        <IntakePipeline
+          submissions={intakeSubmissions}
+          refresh={loadData}
+          startPlayerFromIntake={startPlayerFromIntake}
         />
       )}
 
@@ -307,6 +344,76 @@ export default function App() {
         />
       )}
     </div>
+  );
+}
+
+function IntakePipeline({ submissions, refresh, startPlayerFromIntake }) {
+  return (
+    <main className="page">
+      <section className="hero">
+        <div>
+          <span>Intake Pipeline</span>
+          <h1>Evaluation Requests</h1>
+          <p>Review parent/player intake submissions before turning them into registered players.</p>
+        </div>
+        <button className="goldBtn" onClick={refresh}>
+          <RefreshCw size={17} /> Refresh
+        </button>
+      </section>
+
+      <section className="panel">
+        <div className="panelHeader">
+          <h2>Submitted Intake Forms</h2>
+          <span className="goldText">{submissions.length}</span>
+        </div>
+
+        <div className="table">
+          <div className="tableHead" style={{ gridTemplateColumns: "1.4fr 1.4fr 1.2fr .8fr .8fr 1fr" }}>
+            <span>Athlete</span>
+            <span>Parent Contact</span>
+            <span>Group / Position</span>
+            <span>Payment</span>
+            <span>Status</span>
+            <span>Action</span>
+          </div>
+
+          {submissions.map(submission => (
+            <div className="tableRow" key={submission.id} style={{ gridTemplateColumns: "1.4fr 1.4fr 1.2fr .8fr .8fr 1fr" }}>
+              <span>
+                <strong>{submission.athlete_first_name} {submission.athlete_last_name_1}</strong>
+                <small>{submission.school || "School not provided"} · Birth Year: {submission.birth_year || "-"}</small>
+              </span>
+
+              <span>
+                <strong>{submission.parent_first_name} {submission.parent_last_name}</strong>
+                <small>{submission.email_1a31 || "-"} · {submission.phone_7aeb || "-"}</small>
+              </span>
+
+              <span>
+                <strong>{submission.dropdown_90c5 || "-"}</strong>
+                <small>{submission.position || "Position not set"}</small>
+              </span>
+
+              <span>
+                <PlacementBadge placement={submission.payment_status || "unpaid"} />
+              </span>
+
+              <span>
+                <PlacementBadge placement={submission.status || "new"} />
+              </span>
+
+              <span>
+                <button className="goldBtn" type="button" onClick={() => startPlayerFromIntake(submission)}>
+                  <UserPlus size={16} /> Add Player
+                </button>
+              </span>
+            </div>
+          ))}
+
+          {!submissions.length && <div className="empty">No intake submissions yet.</div>}
+        </div>
+      </section>
+    </main>
   );
 }
 
