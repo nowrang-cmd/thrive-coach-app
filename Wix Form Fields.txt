@@ -1,0 +1,46 @@
+athlete_first_name
+
+athlete_last_name_1
+
+dropdown_90c5
+
+birth_year
+
+position
+
+school
+
+parent_first_name
+
+parent_last_name
+
+email_1a31
+
+phone_7aeb
+
+years_of_experience
+
+highest_level_played
+
+what_does_the_athlete_want_to_improve
+
+
+
+
+{
+  "first_name": "{{athlete_first_name}}",
+  "last_name": "{{athlete_last_name_1}}",
+  "birth_year": {{birth_year}},
+  "grade_level": "{{dropdown_90c5}}",
+  "position": "{{position}}",
+  "school": "{{school}}",
+
+  "parent_first_name": "{{parent_first_name}}",
+  "parent_last_name": "{{parent_last_name}}",
+  "email": "{{email_1a31}}",
+  "phone": "{{phone_7aeb}}",
+
+  "years_of_experience": "{{years_of_experience}}",
+  "highest_level_played": "{{highest_level_played}}",
+  "improvement_goals": "{{what_does_the_athlete_want_to_improve}}"
+}
