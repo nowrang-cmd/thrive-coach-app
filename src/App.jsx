@@ -110,6 +110,16 @@ function requestPhone(request) {
   return pick(request?.parent_phone, request?.phone, request?.phone_7aeb);
 }
 
+function phoneHref(phone) {
+  const cleaned = String(phone || "").replace(/[^+\d]/g, "");
+  return cleaned ? `tel:${cleaned}` : "";
+}
+
+function emailHref(email) {
+  const cleaned = String(email || "").trim();
+  return cleaned ? `mailto:${cleaned}` : "";
+}
+
 function requestGrade(request) {
   return pick(request?.grade, request?.dropdown_90c5, request?.grade);
 }
@@ -972,11 +982,35 @@ function Dashboard({
         </div>
       </section>
 
-      <section className="statGrid requestStats compactStats">
-        <Metric title="Active" value={requestStats.active} sub="New / waiting / interested" />
-        <Metric title="New" value={requestStats.new} sub="Needs first contact" />
-        <Metric title="Waiting" value={requestStats.waiting_reply} sub="Follow-up needed" />
-        <Metric title="Booked" value={requestStats.evaluation_booked} sub="Evaluation sessions" />
+      <section className="statGrid requestStats compactStats" aria-label="Evaluation request quick filters">
+        <Metric
+          title="Active"
+          value={requestStats.active}
+          sub="New / waiting / interested"
+          active={requestFilter === "active"}
+          onClick={() => setRequestFilter("active")}
+        />
+        <Metric
+          title="New"
+          value={requestStats.new}
+          sub="Needs first contact"
+          active={requestFilter === "new"}
+          onClick={() => setRequestFilter("new")}
+        />
+        <Metric
+          title="Waiting"
+          value={requestStats.waiting_reply}
+          sub="Follow-up needed"
+          active={requestFilter === "waiting_reply"}
+          onClick={() => setRequestFilter("waiting_reply")}
+        />
+        <Metric
+          title="Booked"
+          value={requestStats.evaluation_booked}
+          sub="Evaluation sessions"
+          active={requestFilter === "evaluation_booked"}
+          onClick={() => setRequestFilter("evaluation_booked")}
+        />
       </section>
 
       <section className="pipelineShell">
@@ -1099,8 +1133,8 @@ function RequestDetailPanel({ request, updateRequestStatus }) {
         <DetailItem label="Position" value={request.position || "-"} />
         <DetailItem label="Submitted" value={submitted} />
         <DetailItem label="Parent / Guardian" value={requestParentName(request)} />
-        <DetailItem label="Email" value={requestEmail(request) || "-"} />
-        <DetailItem label="Phone" value={requestPhone(request) || "-"} />
+        <DetailItem label="Email" value={requestEmail(request) || "-"} href={emailHref(requestEmail(request))} />
+        <DetailItem label="Phone" value={requestPhone(request) || "-"} href={phoneHref(requestPhone(request))} />
         <DetailItem label="School" value={request.school || "-"} />
         <DetailItem label="Experience" value={request.years_of_experience || "-"} />
         <DetailItem label="Highest Level" value={request.highest_level_played || "-"} />
@@ -1132,11 +1166,17 @@ function RequestDetailPanel({ request, updateRequestStatus }) {
   );
 }
 
-function DetailItem({ label, value }) {
+function DetailItem({ label, value, href }) {
   return (
     <div className="detailItem">
       <small>{label}</small>
-      <strong>{value}</strong>
+      {href ? (
+        <a className="detailLink" href={href}>
+          {value}
+        </a>
+      ) : (
+        <strong>{value}</strong>
+      )}
     </div>
   );
 }
@@ -1506,9 +1546,21 @@ function FieldTextarea({ label, value, onChange, placeholder }) {
   );
 }
 
-function Metric({ title, value, sub }) {
+function Metric({ title, value, sub, onClick, active = false }) {
+  const className = `metric ${onClick ? "metricClickable" : ""} ${active ? "metricSelected" : ""}`.trim();
+
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick} aria-pressed={active}>
+        <span>{title}</span>
+        <strong>{value}</strong>
+        <small>{sub}</small>
+      </button>
+    );
+  }
+
   return (
-    <div className="metric">
+    <div className={className}>
       <span>{title}</span>
       <strong>{value}</strong>
       <small>{sub}</small>
