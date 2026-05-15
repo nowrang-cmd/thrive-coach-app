@@ -46,6 +46,24 @@ const REQUEST_STATUS_LABELS = REQUEST_STATUSES.reduce((acc, status) => {
   return acc;
 }, {});
 
+
+const SUBMISSION_STATUSES = [
+  { key: "active", label: "Active", short: "Active" },
+  { key: "submitted", label: "Submitted", short: "Submitted" },
+  { key: "reviewed", label: "Reviewed", short: "Reviewed" },
+  { key: "assigned", label: "Assigned to Coach", short: "Assigned" },
+  { key: "evaluation_complete", label: "Evaluation Complete", short: "Complete" },
+  { key: "archived", label: "Archived", short: "Archived" },
+  { key: "all", label: "All Submissions", short: "All" }
+];
+
+const ACTIVE_SUBMISSION_STATUSES = ["submitted", "reviewed", "assigned"];
+
+const SUBMISSION_STATUS_LABELS = SUBMISSION_STATUSES.reduce((acc, status) => {
+  acc[status.key] = status.label;
+  return acc;
+}, {});
+
 const WEIGHTS = {
   Guard: { shooting: 0.22, ball_handling: 0.22, defense: 0.14, athleticism: 0.14, basketball_iq: 0.18, finishing: 0.1 },
   Forward: { shooting: 0.18, ball_handling: 0.14, defense: 0.18, athleticism: 0.18, basketball_iq: 0.16, finishing: 0.16 },
@@ -138,6 +156,23 @@ function normalizeRequestStatus(status) {
   return "new";
 }
 
+function normalizeSubmissionStatus(status) {
+  if (!status) return "submitted";
+  const cleaned = String(status).toLowerCase().trim().replace(/\s+/g, "_");
+  if (cleaned === "complete" || cleaned === "completed") return "evaluation_complete";
+  if (cleaned === "assigned_to_coach") return "assigned";
+  if (SUBMISSION_STATUS_LABELS[cleaned]) return cleaned;
+  return "submitted";
+}
+
+function submissionAthleteName(submission) {
+  return requestAthleteName(submission);
+}
+
+function submissionCoach(submission) {
+  return pick(submission?.assigned_coach, submission?.coach_name, submission?.coach_email);
+}
+
 function emptyScores() {
   return CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.key]: 5 }), {});
 }
@@ -147,12 +182,15 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
   const [evaluationRequests, setEvaluationRequests] = useState([]);
+  const [evaluationSubmissions, setEvaluationSubmissions] = useState([]);
   const [coaches, setCoaches] = useState([]);
   const [coachForm, setCoachForm] = useState({ email: "", role: "coach" });
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [search, setSearch] = useState("");
   const [requestFilter, setRequestFilter] = useState("active");
+  const [submissionFilter, setSubmissionFilter] = useState("active");
   const [selectedRequestId, setSelectedRequestId] = useState("");
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [session, setSession] = useState(null);
@@ -202,6 +240,7 @@ export default function App() {
         setPlayers([]);
         setEvaluations([]);
         setEvaluationRequests([]);
+        setEvaluationSubmissions([]);
         setCoaches([]);
       }
     });
@@ -248,11 +287,15 @@ export default function App() {
   async function loadData() {
     setStatus("Loading...");
 
-    const [playersResult, evaluationsResult, requestsResult, coachesResult] = await Promise.all([
+    const [playersResult, evaluationsResult, requestsResult, submissionsResult, coachesResult] = await Promise.all([
       supabase.from("players").select("*").order("last_name", { ascending: true }),
       supabase
         .from("evaluations")
         .select("*, players(first_name,last_name,grade,position,school)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("evaluation_requests")
+        .select("*")
         .order("created_at", { ascending: false }),
       supabase
         .from("evaluation_submissions")
@@ -279,11 +322,20 @@ export default function App() {
       return;
     }
 
+    if (submissionsResult.error) {
+      setStatus(`Evaluation submission load error: ${submissionsResult.error.message}`);
+      return;
+    }
+
     setPlayers(playersResult.data || []);
     setEvaluations(evaluationsResult.data || []);
     setEvaluationRequests((requestsResult.data || []).map(request => ({
       ...request,
       status: normalizeRequestStatus(request.status)
+    })));
+    setEvaluationSubmissions((submissionsResult.data || []).map(submission => ({
+      ...submission,
+      status: normalizeSubmissionStatus(submission.status)
     })));
 
     if (coachesResult.error) {
@@ -346,7 +398,7 @@ export default function App() {
       status: "new"
     };
 
-    const { error } = await supabase.from("evaluation_submissions").insert([payload]);
+    const { error } = await supabase.from("evaluation_requests").insert([payload]);
 
     if (error) {
       setSaving(false);
@@ -380,7 +432,7 @@ export default function App() {
     }
 
     const { data, error } = await supabase
-      .from("evaluation_submissions")
+      .from("evaluation_requests")
       .update(payload)
       .eq("id", id)
       .select()
@@ -413,7 +465,7 @@ export default function App() {
 
     const now = new Date().toISOString();
     const { error } = await supabase
-      .from("evaluation_submissions")
+      .from("evaluation_requests")
       .update({
         status: "waiting_reply",
         contacted_at: now,
@@ -536,6 +588,64 @@ export default function App() {
     return filteredRequests.find(request => request.id === selectedRequestId) || filteredRequests[0];
   }, [filteredRequests, selectedRequestId]);
 
+  const submissionStats = useMemo(() => {
+    const counts = evaluationSubmissions.reduce((acc, submission) => {
+      const key = normalizeSubmissionStatus(submission.status);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const activeTotal = ACTIVE_SUBMISSION_STATUSES.reduce((sum, key) => sum + (counts[key] || 0), 0);
+
+    return {
+      total: evaluationSubmissions.length,
+      active: activeTotal,
+      submitted: counts.submitted || 0,
+      reviewed: counts.reviewed || 0,
+      assigned: counts.assigned || 0,
+      evaluation_complete: counts.evaluation_complete || 0,
+      archived: counts.archived || 0
+    };
+  }, [evaluationSubmissions]);
+
+  const filteredSubmissions = useMemo(() => {
+    const term = search.toLowerCase().trim();
+
+    return evaluationSubmissions.filter(submission => {
+      const submissionStatus = normalizeSubmissionStatus(submission.status);
+      const matchesFilter =
+        submissionFilter === "all" ||
+        (submissionFilter === "active" && ACTIVE_SUBMISSION_STATUSES.includes(submissionStatus)) ||
+        submissionStatus === submissionFilter;
+
+      const searchable = [
+        submissionAthleteName(submission),
+        requestParentName(submission),
+        requestEmail(submission),
+        requestPhone(submission),
+        requestGrade(submission),
+        submission.birth_year,
+        submission.position,
+        submission.school,
+        submissionCoach(submission),
+        submission.evaluation_date,
+        submission.notes,
+        submission.evaluation_notes,
+        SUBMISSION_STATUS_LABELS[submissionStatus]
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return matchesFilter && (!term || searchable.includes(term));
+    });
+  }, [evaluationSubmissions, submissionFilter, search]);
+
+  const selectedSubmission = useMemo(() => {
+    if (!filteredSubmissions.length) return null;
+    return filteredSubmissions.find(submission => submission.id === selectedSubmissionId) || filteredSubmissions[0];
+  }, [filteredSubmissions, selectedSubmissionId]);
+
   const filteredEvaluations = useMemo(() => {
     const term = search.toLowerCase().trim();
     if (!term) return evaluations;
@@ -546,6 +656,107 @@ export default function App() {
       evaluation.placement?.toLowerCase().includes(term)
     );
   }, [evaluations, search]);
+
+  async function updateSubmissionStatus(id, nextStatus) {
+    setStatus("");
+    const normalizedStatus = normalizeSubmissionStatus(nextStatus);
+    const now = new Date().toISOString();
+
+    const payload = {
+      status: normalizedStatus,
+      updated_at: now
+    };
+
+    if (normalizedStatus === "reviewed") {
+      payload.reviewed_at = now;
+    }
+
+    if (normalizedStatus === "assigned") {
+      payload.assigned_at = now;
+    }
+
+    if (normalizedStatus === "evaluation_complete") {
+      payload.completed_at = now;
+    }
+
+    if (normalizedStatus === "archived") {
+      payload.archived_at = now;
+    }
+
+    const { data, error } = await supabase
+      .from("evaluation_submissions")
+      .update(payload)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      setStatus(`Could not update submission status: ${error.message}`);
+      return false;
+    }
+
+    setEvaluationSubmissions(prev =>
+      prev.map(submission => submission.id === id ? { ...submission, ...data, status: normalizeSubmissionStatus(data.status) } : submission)
+    );
+
+    return true;
+  }
+
+  async function createSubmissionFromRequest(request) {
+    if (!request?.id) return false;
+
+    const duplicate = evaluationSubmissions.find(submission => submission.request_id === request.id);
+    if (duplicate) {
+      setView("submissions");
+      setSelectedSubmissionId(duplicate.id);
+      setSubmissionFilter("all");
+      setStatus("This request is already connected to an evaluation submission.");
+      return true;
+    }
+
+    setSaving(true);
+    setStatus("");
+
+    const payload = {
+      request_id: request.id,
+      athlete_first_name: pick(request.athlete_first_name, request.player_first_name),
+      athlete_last_name: pick(request.athlete_last_name, request.athlete_last_name_1, request.player_last_name),
+      grade: requestGrade(request),
+      birth_year: request.birth_year || null,
+      position: request.position || "",
+      school: request.school || "",
+      parent_first_name: request.parent_first_name || "",
+      parent_last_name: request.parent_last_name || "",
+      parent_email: requestEmail(request),
+      parent_phone: requestPhone(request),
+      years_of_experience: request.years_of_experience || "",
+      highest_level_played: request.highest_level_played || "",
+      improvement_goals: requestImprovementGoals(request),
+      status: "submitted"
+    };
+
+    const { data, error } = await supabase
+      .from("evaluation_submissions")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      setSaving(false);
+      setStatus(`Could not create connected submission: ${error.message}`);
+      return false;
+    }
+
+    await updateRequestStatus(request.id, "evaluation_booked");
+
+    setEvaluationSubmissions(prev => [{ ...data, status: normalizeSubmissionStatus(data.status) }, ...prev]);
+    setSelectedSubmissionId(data.id);
+    setSubmissionFilter("all");
+    setView("submissions");
+    setSaving(false);
+    setStatus("Connected evaluation submission created from request.");
+    return true;
+  }
 
   async function addCoachProfile(event) {
     event.preventDefault();
@@ -716,11 +927,17 @@ export default function App() {
         </div>
 
         <nav>
-          <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>
-            <BarChart3 size={17} /> Request Pipeline
+          <button className={view === "dashboard" ? "active requestsTab" : "requestsTab"} onClick={() => setView("dashboard")}>
+            <BarChart3 size={17} /> Requests
+          </button>
+          <button className={view === "submissions" ? "active submissionsTab" : "submissionsTab"} onClick={() => setView("submissions")}>
+            <ClipboardList size={17} /> Submissions
           </button>
           <button className={view === "intake" ? "active" : ""} onClick={() => setView("intake")}>
             <Send size={17} /> Intake Form
+          </button>
+          <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>
+            <Trophy size={17} /> History
           </button>
           <button className={view === "coaches" ? "active" : ""} onClick={() => setView("coaches")}>
             <Users size={17} /> Coaches
@@ -759,10 +976,28 @@ export default function App() {
           setSearch={setSearch}
           refresh={loadData}
           updateRequestStatus={updateRequestStatus}
+          createSubmissionFromRequest={createSubmissionFromRequest}
           markAllVisibleWaiting={markAllVisibleWaiting}
           selectedRequest={selectedRequest}
           selectedRequestId={selectedRequest?.id || ""}
           setSelectedRequestId={setSelectedRequestId}
+          saving={saving}
+        />
+      )}
+
+      {view === "submissions" && (
+        <SubmissionDashboard
+          submissionStats={submissionStats}
+          submissions={filteredSubmissions}
+          submissionFilter={submissionFilter}
+          setSubmissionFilter={setSubmissionFilter}
+          search={search}
+          setSearch={setSearch}
+          refresh={loadData}
+          updateSubmissionStatus={updateSubmissionStatus}
+          selectedSubmission={selectedSubmission}
+          selectedSubmissionId={selectedSubmission?.id || ""}
+          setSelectedSubmissionId={setSelectedSubmissionId}
           saving={saving}
         />
       )}
@@ -958,6 +1193,7 @@ function Dashboard({
   setSearch,
   refresh,
   updateRequestStatus,
+  createSubmissionFromRequest,
   markAllVisibleWaiting,
   selectedRequest,
   selectedRequestId,
@@ -965,7 +1201,7 @@ function Dashboard({
   saving
 }) {
   return (
-    <main className="page dashboardPage">
+    <main className="page dashboardPage requestsDashboard">
       <section className="dashboardHero">
         <div>
           <span>Coach Dashboard</span>
@@ -1055,7 +1291,7 @@ function Dashboard({
           </div>
         </div>
 
-        <RequestDetailPanel request={selectedRequest} updateRequestStatus={updateRequestStatus} />
+        <RequestDetailPanel request={selectedRequest} updateRequestStatus={updateRequestStatus} createSubmissionFromRequest={createSubmissionFromRequest} />
       </section>
     </main>
   );
@@ -1104,7 +1340,7 @@ function RequestRow({ request, selected, onSelect, updateRequestStatus }) {
   );
 }
 
-function RequestDetailPanel({ request, updateRequestStatus }) {
+function RequestDetailPanel({ request, updateRequestStatus, createSubmissionFromRequest }) {
   if (!request) {
     return (
       <aside className="requestDetailPanel panel">
@@ -1158,6 +1394,9 @@ function RequestDetailPanel({ request, updateRequestStatus }) {
         <button type="button" onClick={() => updateRequestStatus(request.id, "evaluation_booked")}>
           <CalendarCheck size={15} /> Booked
         </button>
+        <button type="button" className="submissionCreateBtn" onClick={() => createSubmissionFromRequest(request)}>
+          <ClipboardList size={15} /> Create Submission
+        </button>
         <button type="button" className="archiveBtn" onClick={() => updateRequestStatus(request.id, "archived")}>
           <Archive size={15} /> Archive
         </button>
@@ -1183,6 +1422,205 @@ function DetailItem({ label, value, href }) {
 
 function RequestStatusBadge({ status }) {
   return <em className={`requestBadge ${status}`}>{REQUEST_STATUS_LABELS[status] || "New Request"}</em>;
+}
+
+function SubmissionDashboard({
+  submissionStats,
+  submissions,
+  submissionFilter,
+  setSubmissionFilter,
+  search,
+  setSearch,
+  refresh,
+  updateSubmissionStatus,
+  selectedSubmission,
+  selectedSubmissionId,
+  setSelectedSubmissionId,
+  saving
+}) {
+  return (
+    <main className="page dashboardPage submissionsDashboard">
+      <section className="dashboardHero submissionsHero">
+        <div>
+          <span>Coach Dashboard</span>
+          <h1>Evaluation Submission Dashboard</h1>
+          <p>Track completed forms after a player moves from request interest into the evaluation workflow.</p>
+        </div>
+        <div className="heroActions">
+          <button className="goldBtn blueBtn" onClick={refresh} disabled={saving}>
+            <RefreshCw size={17} /> Refresh
+          </button>
+        </div>
+      </section>
+
+      <section className="statGrid requestStats compactStats submissionStats" aria-label="Evaluation submission quick filters">
+        <Metric
+          title="Active"
+          value={submissionStats.active}
+          sub="Submitted / reviewed / assigned"
+          active={submissionFilter === "active"}
+          onClick={() => setSubmissionFilter("active")}
+        />
+        <Metric
+          title="Submitted"
+          value={submissionStats.submitted}
+          sub="Needs review"
+          active={submissionFilter === "submitted"}
+          onClick={() => setSubmissionFilter("submitted")}
+        />
+        <Metric
+          title="Assigned"
+          value={submissionStats.assigned}
+          sub="Coach attached"
+          active={submissionFilter === "assigned"}
+          onClick={() => setSubmissionFilter("assigned")}
+        />
+        <Metric
+          title="Complete"
+          value={submissionStats.evaluation_complete}
+          sub="Evaluation done"
+          active={submissionFilter === "evaluation_complete"}
+          onClick={() => setSubmissionFilter("evaluation_complete")}
+        />
+      </section>
+
+      <section className="pipelineShell">
+        <div className="pipelineMain panel submissionPanel">
+          <div className="pipelineHeader">
+            <div>
+              <h2>Submission Pipeline</h2>
+              <p className="panelSubtext">Select a submission to review player information and move the evaluation forward.</p>
+            </div>
+            <div className="searchBox pipelineSearch">
+              <Search size={16} />
+              <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search athlete, parent, coach, grade..." />
+            </div>
+          </div>
+
+          <div className="filterBar compactFilters submissionFilters">
+            {SUBMISSION_STATUSES.map(status => (
+              <button
+                key={status.key}
+                className={submissionFilter === status.key ? "active" : ""}
+                onClick={() => setSubmissionFilter(status.key)}
+                type="button"
+              >
+                {status.short}
+                <strong>{submissionStats[status.key] ?? submissionStats.total}</strong>
+              </button>
+            ))}
+          </div>
+
+          <div className="compactRequestList submissionList">
+            {submissions.map(submission => (
+              <SubmissionRow
+                key={submission.id}
+                submission={submission}
+                selected={selectedSubmissionId === submission.id}
+                onSelect={() => setSelectedSubmissionId(submission.id)}
+              />
+            ))}
+
+            {!submissions.length && <div className="empty">No submissions match this view.</div>}
+          </div>
+        </div>
+
+        <SubmissionDetailPanel submission={selectedSubmission} updateSubmissionStatus={updateSubmissionStatus} />
+      </section>
+    </main>
+  );
+}
+
+function SubmissionRow({ submission, selected, onSelect }) {
+  const statusKey = normalizeSubmissionStatus(submission.status);
+  const submitted = submission.created_at
+    ? new Date(submission.created_at).toLocaleDateString("en-CA")
+    : "-";
+
+  return (
+    <article className={`compactRequestRow submissionRow ${selected ? "selected" : ""}`} onClick={onSelect}>
+      <div className="requestIdentity">
+        <strong>{submissionAthleteName(submission)}</strong>
+        <span>{requestGrade(submission)} • {submission.birth_year || "Birth year -"} • {submission.position || "Position -"}</span>
+      </div>
+
+      <div className="requestParentMini">
+        <strong>{requestParentName(submission)}</strong>
+        <span>{requestPhone(submission) || "No phone"}</span>
+      </div>
+
+      <div className="requestSubmittedMini">
+        <span>Submitted</span>
+        <strong>{submitted}</strong>
+      </div>
+
+      <SubmissionStatusBadge status={statusKey} />
+    </article>
+  );
+}
+
+function SubmissionDetailPanel({ submission, updateSubmissionStatus }) {
+  if (!submission) {
+    return (
+      <aside className="requestDetailPanel panel submissionDetailPanel">
+        <h2>Selected Submission</h2>
+        <div className="empty">Select a submission to see full details.</div>
+      </aside>
+    );
+  }
+
+  const statusKey = normalizeSubmissionStatus(submission.status);
+  const submitted = submission.created_at ? new Date(submission.created_at).toLocaleString("en-CA") : "-";
+  const requestConnected = submission.request_id ? "Connected to request" : "No linked request ID";
+
+  return (
+    <aside className="requestDetailPanel panel submissionDetailPanel">
+      <div className="detailTop">
+        <div>
+          <span>Selected Submission</span>
+          <h2>{submissionAthleteName(submission)}</h2>
+        </div>
+        <SubmissionStatusBadge status={statusKey} />
+      </div>
+
+      <div className="detailGrid">
+        <DetailItem label="Grade / Group" value={requestGrade(submission) || "-"} />
+        <DetailItem label="Birth Year" value={submission.birth_year || "-"} />
+        <DetailItem label="Position" value={submission.position || "-"} />
+        <DetailItem label="Submitted" value={submitted} />
+        <DetailItem label="Parent / Guardian" value={requestParentName(submission)} />
+        <DetailItem label="Email" value={requestEmail(submission) || "-"} href={emailHref(requestEmail(submission))} />
+        <DetailItem label="Phone" value={requestPhone(submission) || "-"} href={phoneHref(requestPhone(submission))} />
+        <DetailItem label="School" value={submission.school || "-"} />
+        <DetailItem label="Assigned Coach" value={submissionCoach(submission) || "-"} />
+        <DetailItem label="Request Link" value={requestConnected} />
+      </div>
+
+      <div className="detailNote submissionNote">
+        <small>Submission Notes / Improvement Goals</small>
+        <p>{pick(submission.evaluation_notes, submission.notes, requestImprovementGoals(submission)) || "No notes entered."}</p>
+      </div>
+
+      <div className="detailActions submissionActions">
+        <button type="button" onClick={() => updateSubmissionStatus(submission.id, "reviewed")}>
+          <CheckCircle2 size={15} /> Reviewed
+        </button>
+        <button type="button" onClick={() => updateSubmissionStatus(submission.id, "assigned")}>
+          <Users size={15} /> Assigned
+        </button>
+        <button type="button" onClick={() => updateSubmissionStatus(submission.id, "evaluation_complete")}>
+          <CalendarCheck size={15} /> Complete
+        </button>
+        <button type="button" className="archiveBtn" onClick={() => updateSubmissionStatus(submission.id, "archived")}>
+          <Archive size={15} /> Archive
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function SubmissionStatusBadge({ status }) {
+  return <em className={`requestBadge submissionBadge ${status}`}>{SUBMISSION_STATUS_LABELS[status] || "Submitted"}</em>;
 }
 
 function CoachManagement({ coaches, coachForm, setCoachForm, addCoachProfile, setCoachActive, saving, refresh }) {

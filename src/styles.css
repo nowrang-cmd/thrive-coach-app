@@ -2431,3 +2431,127 @@ label {
   outline: 3px solid rgba(224, 188, 106, 0.6);
   outline-offset: 3px;
 }
+
+/* ============================================================
+   THRiVE Dual Dashboard — Requests + Submissions
+   Final connected pipeline styling
+   ============================================================ */
+
+.topbar nav .requestsTab.active {
+  background: linear-gradient(180deg, #f0c75e 0%, #c8a44d 100%) !important;
+  color: #050505 !important;
+}
+
+.topbar nav .submissionsTab.active,
+.blueBtn {
+  background: linear-gradient(180deg, #7cc4ff 0%, #2f86ff 100%) !important;
+  color: #031427 !important;
+  border-color: transparent !important;
+}
+
+.submissionsDashboard .dashboardHero h1,
+.submissionsDashboard .dashboardHero span,
+.submissionsDashboard .pipelineHeader h2,
+.submissionDetailPanel .detailTop span,
+.submissionDetailPanel .detailItem small,
+.submissionNote small {
+  color: #7cc4ff !important;
+}
+
+.submissionsDashboard .dashboardHero h1 {
+  text-shadow: 0 0 28px rgba(47, 134, 255, 0.36) !important;
+}
+
+.submissionsDashboard .panel,
+.submissionPanel,
+.submissionDetailPanel {
+  border-color: rgba(124, 196, 255, 0.25) !important;
+}
+
+.submissionStats .metric:nth-child(1),
+.submissionStats .metric:nth-child(2),
+.submissionStats .metric:nth-child(3),
+.submissionStats .metric:nth-child(4) {
+  border-color: rgba(124, 196, 255, 0.48) !important;
+  box-shadow: 0 14px 34px rgba(47, 134, 255, 0.13) !important;
+}
+
+.submissionStats .metric::before {
+  background: radial-gradient(circle at left, rgba(47, 134, 255, 0.9), transparent 58%) !important;
+}
+
+.submissionStats .metric span {
+  color: #7cc4ff !important;
+}
+
+.submissionStats .metricSelected {
+  border-color: #7cc4ff !important;
+  background:
+    radial-gradient(circle at top left, rgba(47, 134, 255, 0.28), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035)) !important;
+  box-shadow: 0 0 32px rgba(47, 134, 255, 0.25) !important;
+}
+
+.submissionFilters button {
+  border-color: rgba(124, 196, 255, 0.44) !important;
+  color: #9bd2ff !important;
+}
+
+.submissionFilters button:hover {
+  background: rgba(47, 134, 255, 0.15) !important;
+  border-color: #7cc4ff !important;
+  color: #ffffff !important;
+}
+
+.submissionFilters button.active {
+  background: linear-gradient(180deg, #7cc4ff 0%, #2f86ff 100%) !important;
+  color: #031427 !important;
+}
+
+.submissionRow:hover,
+.submissionRow.selected {
+  border-color: rgba(124, 196, 255, 0.68) !important;
+  background: rgba(47, 134, 255, 0.12) !important;
+}
+
+.submissionBadge {
+  border-color: rgba(124, 196, 255, 0.48) !important;
+  background: rgba(47, 134, 255, 0.13) !important;
+  color: #9bd2ff !important;
+}
+
+.submissionBadge.reviewed {
+  border-color: rgba(152, 204, 255, 0.55) !important;
+  background: rgba(152, 204, 255, 0.14) !important;
+  color: #cde8ff !important;
+}
+
+.submissionBadge.assigned {
+  border-color: rgba(177, 133, 255, 0.55) !important;
+  background: rgba(177, 133, 255, 0.14) !important;
+  color: #dccbff !important;
+}
+
+.submissionBadge.evaluation_complete {
+  border-color: rgba(109, 255, 164, 0.5) !important;
+  background: rgba(109, 255, 164, 0.12) !important;
+  color: #b8ffd4 !important;
+}
+
+.submissionBadge.archived {
+  border-color: rgba(255, 90, 90, 0.42) !important;
+  background: rgba(255, 90, 90, 0.12) !important;
+  color: #ffb3b3 !important;
+}
+
+.submissionActions button:hover,
+.submissionCreateBtn:hover {
+  border-color: #7cc4ff !important;
+  background: rgba(47, 134, 255, 0.16) !important;
+  color: #cde8ff !important;
+}
+
+.submissionCreateBtn {
+  border-color: rgba(124, 196, 255, 0.44) !important;
+  color: #9bd2ff !important;
+}
